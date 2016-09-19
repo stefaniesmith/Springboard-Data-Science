@@ -3,30 +3,37 @@ title: "Exploratory Data Analysis"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.width=10, fig.height=4)
+library(plyr)
 library(tidyr)
 library(dplyr)
 library(ggplot2)
-library(maps)
+library(ggthemes)
+library(grid)
+library(choroplethr)
+library(choroplethrMaps)
 ```
 
 ## Project Data
 
 Let's start with exploratory data analysis of the project-specific data. This includes information on school location, school type, teacher attributes, project categories, project pricing and impact, project donations, and project status.
 
-#### Importing the file into a data frame
-```{r}
-project <- read.csv(gzfile("opendata_projects000.gz"), sep = ",", header = FALSE, col.names = c('_projectid', '_teacher_acctid', '_schoolid', 'school_ncesid', 'school_latitude', 'school_longitude', 'school_city', 'school_state', 'school_zip', 'school_metro', 'school_district', 'school_county', 'school_charter', 'school_magnet', 'school_year_round', 'school_nlns', 'school_kipp', 'school_charter_ready_promise', 'teacher_prefix', 'teacher_teach_for_america', 'teacher_ny_teaching_fellow', 'primary_focus_subject', 'primary_focus_area' ,'secondary_focus_subject', 'secondary_focus_area', 'resource_type', 'poverty_level', 'grade_level', 'vendor_shipping_charges', 'sales_tax', 'payment_processing_charges', 'fulfillment_labor_materials', 'total_price_excluding_optional_support', 'total_price_including_optional_support', 'students_reached', 'total_donations', 'num_donors', 'eligible_double_your_impact_match', 'eligible_almost_home_match', 'funding_status', 'date_posted', 'date_completed', 'date_thank_you_packet_mailed', 'date_expiration'))
-project <- tbl_df(project)
+#### Importing the file
+```{r File Import, cache=TRUE}
+project_orig <- read.csv(gzfile("opendata_projects000.gz"), sep = ",", header = FALSE, col.names = c('_projectid', '_teacher_acctid', '_schoolid', 'school_ncesid', 'school_latitude', 'school_longitude', 'school_city', 'school_state', 'school_zip', 'school_metro', 'school_district', 'school_county', 'school_charter', 'school_magnet', 'school_year_round', 'school_nlns', 'school_kipp', 'school_charter_ready_promise', 'teacher_prefix', 'teacher_teach_for_america', 'teacher_ny_teaching_fellow', 'primary_focus_subject', 'primary_focus_area' ,'secondary_focus_subject', 'secondary_focus_area', 'resource_type', 'poverty_level', 'grade_level', 'vendor_shipping_charges', 'sales_tax', 'payment_processing_charges', 'fulfillment_labor_materials', 'total_price_excluding_optional_support', 'total_price_including_optional_support', 'students_reached', 'total_donations', 'num_donors', 'eligible_double_your_impact_match', 'eligible_almost_home_match', 'funding_status', 'date_posted', 'date_completed', 'date_thank_you_packet_mailed', 'date_expiration'))
 ```
 
 #### Cleaning the data
 
-```{r}
+```{r Clean Data}
+project <- tbl_df(project_orig)
 project$X_projectid <- as.character(project$X_projectid)
 project$X_teacher_acctid <- as.character(project$X_teacher_acctid)
 project$X_schoolid <- as.character(project$X_schoolid)
+project$school_ncesid <- as.character(project$school_ncesid)
+
+project$school_zip <- as.factor(project$school_zip)
 
 project$school_charter <- as.logical(toupper(as.character(project$school_charter)))
 project$school_magnet <- as.logical(toupper(as.character(project$school_magnet)))
@@ -43,64 +50,262 @@ project$date_posted <- as.Date(project$date_posted)
 project$date_completed <- as.Date(project$date_completed)
 project$date_thank_you_packet_mailed <- as.Date(project$date_thank_you_packet_mailed)
 project$date_expiration <- as.Date(project$date_expiration)
+
+project$grade_level <- factor(project$grade_level, levels = c("", "Grades PreK-2", "Grades 3-5", "Grades 6-8", "Grades 9-12"))
+project$poverty_level <- factor(project$poverty_level, levels = c("", "low poverty", "moderate poverty", "high poverty", "highest poverty"))
+
 ```
+
 
 #### Funding status
 Since the goal of this capstone project is to predict whether or not a project will be successfully funded, let's first take a look at the different options for funding status.
 
 ``` {r}
-ggplot(project, aes(x = funding_status)) + geom_bar()
+ggplot(project, aes(x = funding_status)) + geom_bar() + coord_flip() + theme_few()
 ```
 
-Let's only focus on the projects that are either completed (successfully funded) or expired (did not reach funding goal), and remove the live and reallocated projects.
+We will only focus on the projects that are either completed (successfully funded) or expired (did not reach funding goal), and remove the live and reallocated projects.
 
 ``` {r}
 project <- project %>% filter(funding_status == "completed" | funding_status == "expired")
 ```
 
-Next, let's look at some plots of the funding status according to various properties of each project (such as subject, grade level, school location, etc.)
+Next, let's look at some of the properties of each project (type of school, type of project, school location, etc.).
 
-##### Funding status by Primary Focus Subject
+#### Type of School
 
-``` {r}
-Palette1 <- c('#7CAE00','#F8766D')
-ggplot(project, aes(x = primary_focus_subject, fill = funding_status)) + geom_bar(position = "fill") + scale_fill_manual(values=Palette1) + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+There are several properties which indicate the type of school, including:
+
+* school_charter
+* school_magnet
+* school_year_round
+* school_nlns (New Leaders for New Schools program)
+* school_kipp
+* school_charter_ready_promise
+
+Let's look at each of these properties and how they relate to funding status.
+``` {r Type of School}
+Palette1 <- c("#7AC36A", "#F15A60")
+draw_graphs <- function(df,prop1,prop2,name1,name2) {
+  plot1 <- ggplot(df, aes(x = prop1)) + geom_bar() + coord_flip() + theme_few() + scale_y_continuous(name = "Total Count") + scale_x_discrete(name = name1)
+
+  plot2 <- ggplot(df, aes(x = prop1, fill = prop2)) + geom_bar(position = "fill") + coord_flip() + theme_few() + theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + scale_fill_manual(name = name2, values=Palette1) + scale_y_continuous(name = "Relative Count")
+
+  grid.draw(cbind(ggplotGrob(plot1), ggplotGrob(plot2), size = "last"))
+}
+
+draw_graphs(project, project$school_charter, project$funding_status, "Charter School", "Funding Status")
 ```
 
-##### Funding status by Primary Focus Area
-
 ``` {r}
-ggplot(project, aes(x = primary_focus_area, fill = funding_status)) + geom_bar(position = "fill") + scale_fill_manual(values=Palette1) + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+draw_graphs(project, project$school_magnet, project$funding_status, "Magnet School", "Funding Status")
 ```
 
-##### Funding status by Resource Type
-
 ``` {r}
-ggplot(project, aes(x = resource_type, fill = funding_status)) + geom_bar(position = "fill") + scale_fill_manual(values=Palette1) + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+draw_graphs(project, project$school_nlns, project$funding_status, "NLNS School", "Funding Status")
 ```
 
-##### Funding status by Poverty Level
-
 ``` {r}
-ggplot(project, aes(x = poverty_level, fill = funding_status)) + geom_bar(position = "fill") + scale_fill_manual(values=Palette1) + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+draw_graphs(project, project$school_kipp, project$funding_status, "KIPP School", "Funding Status")
 ```
 
-##### Funding status by Grade Level
-
 ``` {r}
-ggplot(project, aes(x = grade_level, fill = funding_status)) + geom_bar(position = "fill") + scale_fill_manual(values=Palette1) + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+draw_graphs(project, project$school_charter_ready_promise, project$funding_status, "Charter Ready Promise School", "Funding Status")
 ```
 
-##### Funding status by year posted
+#### Teacher Attributes
 
-``` {r}
-ggplot(project, aes(x = as.factor(format(date_posted,'%Y')), fill = funding_status)) + geom_bar(position = "fill") + scale_fill_manual(values=Palette1) + theme(axis.text.x = element_text(angle=90, vjust=0.5))
+The attributes of the teacher include:
+
+* teacher_prefix
+* teacher_teach_for_america
+* teacher_ny_teaching_fellow
+
+``` {r Teacher Attributes}
+draw_graphs(project, project$teacher_prefix, project$funding_status, "Teacher Prefix", "Funding Status")
 ```
 
-##### Funding status by location
+``` {r}
+draw_graphs(project, project$teacher_teach_for_america, project$funding_status, "Teach for America", "Funding Status")
+```
 
 ``` {r}
-usa <- map_data("usa")
-usamap <- ggplot() + geom_polygon(data = usa, aes(x=long, y = lat, group = group)) + coord_fixed(1.3)
-usamap + geom_point(data = project, aes(x = school_longitude, y = school_latitude, col = funding_status)) + scale_color_manual(values = Palette1)
+draw_graphs(project, project$teacher_ny_teaching_fellow, project$funding_status, "NY Teaching Fellow", "Funding Status")
 ```
+
+
+#### Project Categories
+
+The project categories include:
+
+* primary_focus_subject
+* primary_focus_area
+* secondary_focus_subject
+* secondary_focus_area
+* resource_type
+* poverty_level
+* grade_level
+
+``` {r Project Categories}
+draw_graphs(project, project$primary_focus_area, project$funding_status, "Primary Focus Area", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$primary_focus_subject, project$funding_status, "Primary Focus Subject", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$secondary_focus_area, project$funding_status, "Secondary Focus Area", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$secondary_focus_subject, project$funding_status, "Secondary Focus Subject", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$resource_type, project$funding_status, "Resource Type", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$poverty_level, project$funding_status, "Poverty Level", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$grade_level, project$funding_status, "Grade Level", "Funding Status")
+```
+
+
+#### Project Pricing and Impact
+
+These fields are available under Project Details on a project page, breaking down the cost of a project into its parts.
+
+* vendor_shipping_charges
+* sales_tax
+* payment_processing_charges
+* fulfillment_labor_materials
+* total_price_excluding_opt_donation
+* total_price_including_opt_donation
+* students_reached
+
+Let's look at some of these properties in more detail:
+
+``` {r}
+summary(project$total_price_excluding_optional_support)
+summary(project$total_price_including_optional_support)
+summary(project$students_reached)
+
+draw_histograms <- function(df,prop1,prop2,name1,name2) {
+  plot1 <- ggplot(df, aes(x = prop1)) + geom_histogram() + coord_flip() + theme_few() + scale_y_continuous(name = "Total Count") + scale_x_continuous(name = name1)
+
+  plot2 <- ggplot(df, aes(x = prop1, fill = prop2)) + geom_histogram(position = "fill") + coord_flip() + theme_few() + theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + scale_fill_manual(name = name2, values=Palette1) + scale_y_continuous(name = "Relative Count")
+
+  grid.draw(cbind(ggplotGrob(plot1), ggplotGrob(plot2), size = "last"))
+}
+
+draw_histograms(project, log10(project$total_price_excluding_optional_support), project$funding_status, "Log(Total Price Excluding Optional Support)", "Funding Status")
+```
+
+``` {r}
+draw_histograms(project, log10(project$total_price_including_optional_support), project$funding_status, "Log(Total Price Including Optional Support)", "Funding Status")
+```
+
+``` {r}
+draw_histograms(project, log10(project$students_reached), project$funding_status, "Log(Students Reached)", "Funding Status")
+
+```
+
+To Do: Take a closer look at some of the projects with Total Price = 0. Why is there no cost associated with these projects? Should these projects be removed from the dataset?
+
+#### Project Donations
+
+These fields provide information about the donations made to a particular project.
+
+* total_donations: Total donation amount
+* num_donors: Number of unique donors giving to this project
+* eligible_double_your_impact_match: True if the project was ever eligible for a Double Your Impact match offer
+* eligible_almost_home_match: True if the project was ever eligible for an Almost Home match offer
+
+``` {r}
+summary(project$total_donations)
+summary(project$num_donors)
+draw_histograms(project, log10(project$total_donations), project$funding_status, "Log(Total Donations)", "Funding Status")
+```
+
+``` {r}
+draw_histograms(project, log10(project$num_donors), project$funding_status, "Log(Number of Donors)", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$eligible_double_your_impact_match, project$funding_status, "Eligible for Double Your Impact Match", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$eligible_almost_home_match, project$funding_status, "Eligible for Almost Home Match", "Funding Status")
+```
+
+#### Project Status
+
+These fields provide status information and dates for when a project reached their milestones.
+
+* funding_status: Completed, Expired, Live, or Reallocated
+* date_posted: Date a project was approved by staff to be listed on the site
+* date_completed: Date a project become fully funded
+* date_thank_you_packet_mailed: Date that the project went through the final stage of sending out a thank you package to donors
+* date_expiration: Date the project was set to expire and be delisted from the site
+
+We have already looked at funding_status. Let's also look at the year the project was posted.
+
+``` {r}
+draw_graphs(project, as.factor(format(project$date_posted, '%Y')), project$funding_status, "Year Posted", "Funding Status")
+```
+
+#### School Location
+
+The fields describing school location include:
+
+* school_latitude
+* school_longitude
+* school_city
+* school_state
+* school_zip: 5 Digit Zip
+* school_metro: Urban, Suburban, or Rural
+* school_district
+* school_county
+
+Let's look at how school metro relates to funding status:
+``` {r}
+draw_graphs(project, project$school_metro, project$funding_status, "School Metro", "Funding Status")
+```
+
+
+Let's look at percentage of projects completed by state:
+``` {r}
+project <- project %>% mutate(project_completed = as.integer(funding_status == "completed"))
+
+state_summary <- project %>% group_by(school_state) %>% summarise(value = mean(project_completed) * 100) %>% rename(abb = school_state)
+
+data(state.regions)
+state_summary <- left_join(state_summary, state.regions, by="abb")
+
+state_choropleth(state_summary, num_colors = 1, legend = "Percent Completed")
+```
+
+#### Additional Properties of Interest
+
+##### New Teacher, New School
+The DonorsChoose.org website allows donors to search for projects according to a number of different criteria including "Never before funded teachers" and "Never before funded schools". These properties are not tracked in the original dataset, so let's figure that out now. 
+
+``` {r}
+project <- project %>% arrange(date_posted) 
+project$teacher_new <- !duplicated(project$X_teacher_acctid)
+project$school_new <- !duplicated(project$X_schoolid)
+
+draw_graphs(project, project$teacher_new, project$funding_status, "Never Before Funded Teacher", "Funding Status")
+```
+
+``` {r}
+draw_graphs(project, project$school_new, project$funding_status, "Never Before Funded School", "Funding Status")
+
+```
+
+
