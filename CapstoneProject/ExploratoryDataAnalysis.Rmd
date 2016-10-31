@@ -7,12 +7,16 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.width=10, fig.height=4)
 library(plyr)
 library(tidyr)
+library(data.table)
 library(dplyr)
 library(ggplot2)
 library(ggthemes)
 library(grid)
 library(choroplethr)
 library(choroplethrMaps)
+library(tidytext)
+library(reshape2)
+library(wordcloud)
 ```
 
 ## Project Data
@@ -195,9 +199,9 @@ summary(project$total_price_including_optional_support)
 summary(project$students_reached)
 
 draw_histograms <- function(df,prop1,prop2,name1,name2) {
-  plot1 <- ggplot(df, aes(x = prop1)) + geom_histogram() + coord_flip() + theme_few() + scale_y_continuous(name = "Total Count") + scale_x_continuous(name = name1)
+  plot1 <- ggplot(df, aes(x = prop1)) + geom_histogram(binwidth = 1) + coord_flip() + theme_few() + scale_y_continuous(name = "Total Count") + scale_x_continuous(name = name1)
 
-  plot2 <- ggplot(df, aes(x = prop1, fill = prop2)) + geom_histogram(position = "fill") + coord_flip() + theme_few() + theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + scale_fill_manual(name = name2, values=Palette1) + scale_y_continuous(name = "Relative Count")
+  plot2 <- ggplot(df, aes(x = prop1, fill = prop2)) + geom_histogram(binwidth = 1, position = "fill") + coord_flip() + theme_few() + theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + scale_fill_manual(name = name2, values=Palette1) + scale_y_continuous(name = "Relative Count")
 
   grid.draw(cbind(ggplotGrob(plot1), ggplotGrob(plot2), size = "last"))
 }
@@ -278,7 +282,7 @@ draw_graphs(project, project$school_metro, project$funding_status, "School Metro
 ```
 
 
-Let's look at percentage of projects completed by state:
+Let's look at percentage of projects completed by state and by county:
 ``` {r}
 project <- project %>% mutate(project_completed = as.integer(funding_status == "completed"))
 
@@ -287,7 +291,15 @@ state_summary <- project %>% group_by(school_state) %>% summarise(value = mean(p
 data(state.regions)
 state_summary <- left_join(state_summary, state.regions, by="abb")
 
-state_choropleth(state_summary, num_colors = 1, legend = "Percent Completed")
+state_choropleth(state_summary, num_colors = 5, legend = "Percent Completed")
+
+county_summary <- project %>% rename(state.abb = school_state, county.name = school_county) %>% mutate(county.name = tolower(county.name)) %>% group_by(county.name, state.abb) %>% summarise(value = mean(project_completed) * 100) 
+
+data("county.regions")
+county_summary <- left_join(county.regions, county_summary, by=c("state.abb","county.name"))
+
+county_choropleth(county_summary, num_colors = 5, legend = "Percent Completed")
+
 ```
 
 #### Additional Properties of Interest
@@ -309,3 +321,104 @@ draw_graphs(project, project$school_new, project$funding_status, "Never Before F
 ```
 
 
+## Essay Data
+
+Next, let's examine the project essay data. This includes the full text of the teacher-written requests accompanying all classroom projects.
+
+#### Importing the file
+```{r Essay Import, cache=TRUE}
+essay_orig <- fread("opendata_essays0002/opendata_essays000.csv", sep = ",", header = FALSE, data.table = FALSE, nrows = 10000, col.names = c('_projectid', '_teacher_acctid', 'title', 'short_description', 'need_statement', 'essay', 'thankyou_note', 'impact_letter'))
+```
+
+#### Sentiment Analysis using AFINN Lexicon
+Let's perform sentiment analysis on each essay using the AFINN lexicon, which provides a positivity score for each word, from -5 (most negative) to 5 (most positive). Then we can average the sentiment score for each essay and plot the results.
+
+```{r AFINN Sentiment}
+essay_words <- essay_orig %>%
+  select(`_projectid`, `_teacher_acctid`, essay) %>%
+  unnest_tokens(word, essay) %>%
+  filter(!word %in% stop_words$word,
+         str_detect(word, "^[a-z']+$"))
+
+AFINN <- subset(sentiments, lexicon == "AFINN", select = c(word, score))
+
+afinn_sentiment <- essay_words %>%
+  inner_join(AFINN, by = "word") %>%
+  group_by(`_projectid`, `_teacher_acctid`) %>%
+  summarize(avg_sentiment = mean(score))
+
+ggplot(afinn_sentiment, aes(x=avg_sentiment)) + geom_histogram() + theme_few()
+```
+
+#### Sentiment Analysis using Bing Lexicon
+Let's perform sentiment analysis on each essay using the Bing lexicon, which rates words as positive or negative. Then we can calculate the difference between the number of positive and negative words in each essay and plot the results.
+
+```{r Bing Sentiment}
+bing <- get_sentiments("bing")
+
+bing_sentiment <- essay_words %>%
+  inner_join(bing) %>%
+  count(`_projectid`, `_teacher_acctid`, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+ggplot(bing_sentiment, aes(x=sentiment)) + geom_histogram() + theme_few()
+```
+
+#### Most common positive and negative words
+Let's use the bing lexicon to figure out the most commonly used positive and negative terms.
+```{r Positive Negative Words}
+bing_word_counts <- essay_words %>%
+  inner_join(bing) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_word_counts %>%
+  filter(n > 1000) %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_bar(stat = "identity") + theme_few() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ylab("Contribution to sentiment")
+```
+
+#### Word Cloud
+
+Let's generate a word cloud for the most commonly used positive and negative terms.
+```{r Word Cloud}
+essay_words %>%
+  inner_join(bing) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 100)
+```
+
+#### Most Positive and Negative Essays
+
+Let's take a look at the text from some of the most positive and negative essays.
+
+##### Most Positive According to AFINN Score
+```{r}
+essay_data <- essay_orig %>% select(`_projectid`, `_teacher_acctid`, title, essay) %>% left_join(afinn_sentiment, by = c("_projectid", "_teacher_acctid")) %>% left_join(bing_sentiment, by = c("_projectid", "_teacher_acctid"))
+
+essay_data %>% filter(avg_sentiment == max(avg_sentiment, na.rm = TRUE)) %>% select(essay)
+```
+
+##### Most Positive According to Bing Score
+```{r}
+essay_data %>% filter(sentiment == max(sentiment, na.rm = TRUE)) %>% select(essay)
+```
+
+##### Most Negative According to AFINN Score
+```{r}
+essay_data %>% filter(avg_sentiment == min(avg_sentiment, na.rm = TRUE)) %>% select(essay)
+```
+
+##### Most Negative According to Bing Score
+```{r}
+essay_data %>% filter(sentiment == min(sentiment, na.rm = TRUE)) %>% select(essay)
+```
+
+To Do: Should normalize the Bing score by essay length.
