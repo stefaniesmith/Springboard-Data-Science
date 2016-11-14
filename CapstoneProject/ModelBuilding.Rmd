@@ -11,8 +11,11 @@ library(data.table)
 library(dplyr)
 library(rpart)
 library(rpart.plot)
+library(caret)
 library(e1071)
 library(randomForest)
+library(tidytext)
+library(stringr)
 ```
 
 ## Project Data
@@ -84,6 +87,9 @@ project$poverty_level <- factor(project$poverty_level, levels = c("", "low pover
 
 ```
 
+
+#### Additional Properties of Interest
+
 #### Focus Area and Subject
 The dataset contains values for primary and secondary focus areas and subjects. When
 searching through the DonorsChoose.org site, they do not differentiate between primary
@@ -132,32 +138,43 @@ project$subject_visual_arts <- as.logical(project$primary_focus_subject == "Visu
 
 ```
 
-#### Funding status
-We will only focus on the projects that are either completed (successfully funded) or expired (did not reach funding goal), and remove the live and reallocated projects.
+#### Dealing with Missing Values
+In the dataset, we see that the students_reached property includes some zero values and also several NA values. We will take these to be equivalent, and change the NA's to zeroes.
+
+The resource_type property has several missing values, and also a value "Other". Let's consider these as equivalent and change the missing values to "Other."
+
+```{r Missing Values}
+project$students_reached[is.na(project$students_reached)] <- as.integer(0)
+
+project$resource_type[project$resource_type == ""] <- "Other"
+project$resource_type <- droplevels(project$resource_type)
+```
+
+#### Funding status and Date Posted
+We will only focus on projects that are either completed (successfully funded) or expired (did not reach funding goal), and remove the live and reallocated projects. To limit the scope of the analysis, we will only focus on projects posted in the last 3 years (2014 onward).
 
 ``` {r Funding Status}
 project <- project %>% filter(funding_status == "completed" | funding_status == "expired")
 project$funding_status <- droplevels(project$funding_status)
-```
 
-#### Additional Properties of Interest
-
-##### New Teacher, New School
-The DonorsChoose.org website allows donors to search for projects according to a number of different criteria including "Never before funded teachers" and "Never before funded schools". These properties are not tracked in the original dataset, so let's figure that out now. 
-
-``` {r New Teacher and School}
-project <- project %>% arrange(date_posted) 
-project$teacher_new <- !duplicated(project$`_teacher_acctid`)
-project$school_new <- !duplicated(project$`_schoolid`)
-
+project <- subset(project, date_posted >= "2014-01-01")
 ```
 
 
 ## Essay Data
 
-Since the essay csv file is too large to import all at once, we will import and process the file in smaller batches. Thi s will include:
-* Import the data
-* Calculate sentiment scores using AFINN and BING Lexicons
+#### Importing the file
+Let's import the file and only keep records that are from 2014 onwards.
+```{r Essay Import}
+essay_orig <- fread("opendata_essays0002/opendata_essays000.csv", encoding = "UTF-8", sep = ",", header = FALSE, data.table = FALSE, col.names = c('_projectid', '_teacher_acctid', 'title', 'essay'), drop = c(4,5,7,8))
+
+essay_orig <- project %>% subset(select = c("_projectid", "_teacher_acctid")) %>% left_join(essay_orig, by = c("_projectid", "_teacher_acctid"))
+
+```
+
+
+#### Sentiment Analysis
+Since the essay data is too large to analyze all at once, we will process the data in smaller batches. This will include calculating sentiment scores using AFINN and BING Lexicons.
 
 The AFINN lexicon provides a positivity score for each word, from -5 (most negative) to 5 (most positive). We can average the the positivity scores for each essay to get a sentiment score.
 
@@ -165,21 +182,22 @@ The Bing lexicon rates words as positive or negative. We can calculate the diffe
 
 
 #### Importing the file
-```{r Essay Import}
+```{r Sentiment}
 
 AFINN <- subset(sentiments, lexicon == "AFINN", select = c(word, score))
 bing <- get_sentiments("bing")
 
-essay_data <- data.frame()
+sentiment_data <- data.frame()
 
-for (i in 0:107) {
+for (i in 0:44) {
   cat(i)
-  skip_factor <- i * 10000
-  essay_orig <- fread("opendata_essays0002/opendata_essays000.csv", encoding = "UTF-8", sep = ",", header = FALSE, data.table = FALSE, skip = skip_factor, nrows = 10000, col.names = c('_projectid', '_teacher_acctid', 'title', 'short_description', 'need_statement', 'essay', 'thankyou_note', 'impact_letter'))
-  nrow(essay_orig)
+  firstrow <- 1 + i * 10000
+  lastrow <- (i + 1) * 10000
+  
+  essay_subset <- essay_orig[firstrow:lastrow,] %>% 
+    select(`_projectid`, `_teacher_acctid`, essay)
 
-  essay_words <- essay_orig %>%
-    select(`_projectid`, `_teacher_acctid`, essay) %>%
+  essay_words <- essay_subset %>%
     unnest_tokens(word, essay)
   
   essay_word_count <- essay_words %>% 
@@ -205,22 +223,44 @@ for (i in 0:107) {
     left_join(bing_sentiment, by = c("_projectid", "_teacher_acctid")) %>% 
     mutate(bing_score = 100*bing_count/wordcount)
 
-  essay_data <- essay_data %>% bind_rows(essay_sentiment)
+  sentiment_data <- sentiment_data %>% bind_rows(essay_sentiment)
 }
 
-project <- project %>% left_join(essay_data, by = c("_projectid","_teacher_acctid"))
+project <- project %>% left_join(sentiment_data, by = c("_projectid","_teacher_acctid"))
+
+project$wordcount[is.na(project$wordcount)] <- 0
+project$afinn_score[is.na(project$afinn_score)] <- 0
+project$bing_score[is.na(project$bing_score)] <- 0
 
 ```
+
+```{r  Free up memory}
+sort( sapply(ls(),function(x){object.size(get(x))}))
+remove(essay_orig)
+remove(project_orig)
+remove(sentiment_data)
+remove(bing_sentiment)
+remove(essay_sentiment)
+remove(bing)
+remove(essay_subset)
+remove(AFINN)
+remove(essay_word_count)
+remove(afinn_sentiment)
+remove(essay_words)
+gc()
+```
+
+
 
 
 ## Model Building
 
-The objective of this capstone project is to build a model to predict the chance of getting funding based on certain characteristics of the project and essay. Let's focus on the more recent data from DonorsChoose.org, and use the years 2011-2015 to predict the results from 2016.
+The objective of this capstone project is to build a model to predict the chance of getting funding based on certain characteristics of the project and essay. Let's focus on the more recent data from DonorsChoose.org, and use the years 2014-2015 to predict the results from 2016.
 
 ```{r Training and Test Sets}
 project$completed <- as.logical(project$funding_status == "completed")
 
-train <- subset(project, date_posted >= "2011-01-01" & date_posted <= "2015-12-31")
+train <- subset(project, date_posted >= "2014-01-01" & date_posted <= "2015-12-31")
 test <- subset(project, date_posted >= "2016-01-01")
 ```
 
@@ -229,18 +269,55 @@ For building the model, let's focus on properties of the project that are within
 The independent properties will be:
 * resource_type
 * total_price_excluding_optional_support
-* total_price_including_optional_support
-* students_reached
 * focus_area (7 properties)
 * subject (28 properties)
-* teacher_new (although not entirely under the teac)
-* school_new
+* wordcount
+* afinn_score
+* bing_score
 
 ```{r CART Model}
-model1 <- rpart(completed ~ resource_type + total_price_excluding_optional_support + total_price_including_optional_support + students_reached + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + teacher_new + school_new, data = train, method = "class")
+modelcart <- rpart(funding_status ~ resource_type + total_price_excluding_optional_support + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + wordcount + afinn_score + bing_score, data = train, method = "class", cp = 0.01)
+
+prp(modelcart)
+
+predictiontraincart <- predict(modelcart, type = "class")
+table(train$funding_status, predictiontraincart)
+
+predictiontestcart <- predict(modelcart, newdata = test, type = "class")
+table(test$funding_status, predictiontestcart)
 ```
 
-```{r Random Forest Model}
-model2 <- randomForest(completed ~ resource_type + total_price_excluding_optional_support + total_price_including_optional_support + students_reached + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + teacher_new + school_new, data = train)
+The accuracy of the model on the training set is (232048 + 29037)/360769 = 0.7242
 
+The baseline model (where all projects are predicted as "completed") has an accuracy of (232048 + 23871)/360769 = 0.7094 
+
+The CART model is a modest improvement over the baseline model
+
+The accuracy of the model on the test set is (62132 + 3982)/87117 = 0.7589
+The baseline model has an accuracy of (62132 + 4814)/87117 = 0.7685
+
+The CART model does not perform as well as the baseline model on the test set.
+
+
+
+```{r Logistic Regression Model}
+logmodel <- glm(completed ~ resource_type + total_price_excluding_optional_support + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + wordcount + afinn_score + bing_score, data = train, family = "binomial")
+
+summary(logmodel)
+predictiontrainlog <- predict(logmodel, type = "response")
+table(train$funding_status, predictiontrainlog < 0.5)
+
+predictiontestlog <- predict(logmodel, newdata = test, type = "response")
+table(test$funding_status, predictiontestlog < 0.5)
 ```
+
+The accuracy of the model on the training set is (247480 + 12551)/360769 = 0.7208
+
+The baseline model (where all projects are predicted as "completed") has an accuracy of 0.7094 
+
+The logistic regression model is a modest improvement over the baseline model
+
+The accuracy of the model on the test set is (65361 + 1762)/87117 = 0.7705
+The baseline model has an accuracy of 0.7685
+
+The logistic regression model performs slightly better on the test set than the baseline model.
