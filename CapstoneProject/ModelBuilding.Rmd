@@ -40,17 +40,17 @@ project$school_metro <- as.factor(project$school_metro)
 project$school_district <- as.factor(project$school_district)
 project$school_county <- as.factor(project$school_county)
 
-project$school_charter <- as.logical(toupper(project$school_charter))
-project$school_magnet <- as.logical(toupper(project$school_magnet))
-project$school_year_round <- as.logical(toupper(project$school_year_round))
-project$school_nlns <- as.logical(toupper(project$school_nlns))
-project$school_kipp <- as.logical(toupper(project$school_kipp))
-project$school_charter_ready_promise <- as.logical(toupper(project$school_charter_ready_promise))
+project$school_charter <- as.integer(as.logical(toupper(project$school_charter)))
+project$school_magnet <- as.integer(as.logical(toupper(project$school_magnet)))
+project$school_year_round <- as.integer(as.logical(toupper(project$school_year_round)))
+project$school_nlns <- as.integer(as.logical(toupper(project$school_nlns)))
+project$school_kipp <- as.integer(as.logical(toupper(project$school_kipp)))
+project$school_charter_ready_promise <- as.integer(as.logical(toupper(project$school_charter_ready_promise)))
 
 project$teacher_prefix <- as.factor(project$teacher_prefix)
 
-project$teacher_teach_for_america <- as.logical(toupper(project$teacher_teach_for_america))
-project$teacher_ny_teaching_fellow <- as.logical(toupper(project$teacher_ny_teaching_fellow))
+project$teacher_teach_for_america <- as.integer(as.logical(toupper(project$teacher_teach_for_america)))
+project$teacher_ny_teaching_fellow <- as.integer(as.logical(toupper(project$teacher_ny_teaching_fellow)))
 
 project$primary_focus_subject <- as.factor(project$primary_focus_subject)
 project$primary_focus_area <- as.factor(project$primary_focus_area)
@@ -72,8 +72,8 @@ project$students_reached <- as.integer(project$students_reached)
 project$total_donations <- as.integer(project$total_donations)
 project$num_donors <- as.integer(project$num_donors)
 
-project$eligible_double_your_impact_match <- as.logical(toupper(as.character(project$eligible_double_your_impact_match)))
-project$eligible_almost_home_match <- as.logical(toupper(as.character(project$eligible_almost_home_match)))
+project$eligible_double_your_impact_match <- as.integer(as.logical(toupper(project$eligible_double_your_impact_match)))
+project$eligible_almost_home_match <- as.integer(as.logical(toupper(project$eligible_almost_home_match)))
 
 project$funding_status <- as.factor(project$funding_status)
 
@@ -87,8 +87,23 @@ project$poverty_level <- factor(project$poverty_level, levels = c("", "low pover
 
 ```
 
+#### Funding status and Date Posted
+We will only focus on projects that are either completed (successfully funded) or expired (did not reach funding goal), and remove the live and reallocated projects. To limit the scope of the analysis, we will only focus on projects posted in 2015.
+
+``` {r Funding Status}
+project <- project %>% filter(funding_status == "completed" | funding_status == "expired")
+project$funding_status <- droplevels(project$funding_status)
+
+project <- subset(project, date_posted >= "2015-01-01" & date_posted <= "2015-12-31")
+```
+
 
 #### Additional Properties of Interest
+
+#### Month Posted
+```{r Month}
+project$month_posted <- as.factor(format(project$date_posted, '%B'))
+```
 
 #### Focus Area and Subject
 The dataset contains values for primary and secondary focus areas and subjects. When
@@ -99,42 +114,42 @@ focus_area_applied_learning which will be true if either the primary or secondar
 focus area is "Applied Learning."
 
 ```{r Focus Area and Subject}
-project$focus_area_applied_learning <- as.logical(project$primary_focus_area == "Applied Learning" | project$secondary_focus_area == "Applied Learning")
-project$focus_area_health_sports <- as.logical(project$primary_focus_area == "Health & Sports" | project$secondary_focus_area == "Health & Sports")
-project$focus_area_history_civics <- as.logical(project$primary_focus_area == "History & Civics" | project$secondary_focus_area == "History & Civics")
-project$focus_area_lit_language <- as.logical(project$primary_focus_area == "Literacy & Language" | project$secondary_focus_area == "Literacy & Language")
-project$focus_area_math_science <- as.logical(project$primary_focus_area == "Math & Science" | project$secondary_focus_area == "Math & Science")
-project$focus_area_music_arts <- as.logical(project$primary_focus_area == "Music & The Arts" | project$secondary_focus_area == "Music & The Arts")
-project$focus_area_special_needs <- as.logical(project$primary_focus_area == "Special Needs" | project$secondary_focus_area == "Special Needs")
+project$focus_area_applied_learning <- as.integer(as.logical(project$primary_focus_area == "Applied Learning" | project$secondary_focus_area == "Applied Learning"))
+project$focus_area_health_sports <- as.integer(as.logical(project$primary_focus_area == "Health & Sports" | project$secondary_focus_area == "Health & Sports"))
+project$focus_area_history_civics <- as.integer(as.logical(project$primary_focus_area == "History & Civics" | project$secondary_focus_area == "History & Civics"))
+project$focus_area_lit_language <- as.integer(as.logical(project$primary_focus_area == "Literacy & Language" | project$secondary_focus_area == "Literacy & Language"))
+project$focus_area_math_science <- as.integer(as.logical(project$primary_focus_area == "Math & Science" | project$secondary_focus_area == "Math & Science"))
+project$focus_area_music_arts <- as.integer(as.logical(project$primary_focus_area == "Music & The Arts" | project$secondary_focus_area == "Music & The Arts"))
+project$focus_area_special_needs <- as.integer(as.logical(project$primary_focus_area == "Special Needs" | project$secondary_focus_area == "Special Needs"))
 
-project$subject_applied_sci <- as.logical(project$primary_focus_subject == "Applied Sciences" | project$secondary_focus_subject == "Applied Sciences")
-project$subject_character_ed <- as.logical(project$primary_focus_subject == "Character Education" | project$secondary_focus_subject == "Character Education")
-project$subject_civics_gov <- as.logical(project$primary_focus_subject == "Civics & Government" | project$secondary_focus_subject == "Civics & Government")
-project$subject_college_career <- as.logical(project$primary_focus_subject == "College & Career Prep" | project$secondary_focus_subject == "College & Career Prep")
-project$subject_community <- as.logical(project$primary_focus_subject == "Community Service" | project$secondary_focus_subject == "Community Service")
-project$subject_early_dev <- as.logical(project$primary_focus_subject == "Early Development" | project$secondary_focus_subject == "Early Development")
-project$subject_economics <- as.logical(project$primary_focus_subject == "Economics" | project$secondary_focus_subject == "Economics")
-project$subject_enviro_sci <- as.logical(project$primary_focus_subject == "Environmental Science" | project$secondary_focus_subject == "Environmental Science")
-project$subject_esl <- as.logical(project$primary_focus_subject == "ESL" | project$secondary_focus_subject == "ESL")
-project$subject_extracurricular <- as.logical(project$primary_focus_subject == "Extracurricular" | project$secondary_focus_subject == "Extracurricular")
-project$subject_financial_lit <- as.logical(project$primary_focus_subject == "Financial Literacy" | project$secondary_focus_subject == "Financial Literacy")
-project$subject_foreign_lang <- as.logical(project$primary_focus_subject == "Foreign Languages" | project$secondary_focus_subject == "Foreign Languages")
-project$subject_gym_fitness <- as.logical(project$primary_focus_subject == "Gym & Fitness" | project$secondary_focus_subject == "Gym & Fitness")
-project$subject_health_life_sci <- as.logical(project$primary_focus_subject == "Health & Life Science" | project$secondary_focus_subject == "Health & Life Science")
-project$subject_health_wellness <- as.logical(project$primary_focus_subject == "Health & Wellness" | project$secondary_focus_subject == "Health & Wellness")
-project$subject_hist_geog <- as.logical(project$primary_focus_subject == "History & Geography" | project$secondary_focus_subject == "History & Geography")
-project$subject_literacy <- as.logical(project$primary_focus_subject == "Literacy" | project$secondary_focus_subject == "Literacy")
-project$subject_lit_writing <- as.logical(project$primary_focus_subject == "Literature & Writing" | project$secondary_focus_subject == "Literature & Writing")
-project$subject_math <- as.logical(project$primary_focus_subject == "Mathematics" | project$secondary_focus_subject == "Mathematics")
-project$subject_music <- as.logical(project$primary_focus_subject == "Music" | project$secondary_focus_subject == "Music")
-project$subject_nutrition <- as.logical(project$primary_focus_subject == "Nutrition" | project$secondary_focus_subject == "Nutrition")
-project$subject_other <- as.logical(project$primary_focus_subject == "Other" | project$secondary_focus_subject == "Other")
-project$subject_parent <- as.logical(project$primary_focus_subject == "Parent Involvement" | project$secondary_focus_subject == "Parent Involvement")
-project$subject_perform_art <- as.logical(project$primary_focus_subject == "Performing Arts" | project$secondary_focus_subject == "Performing Arts")
-project$subject_social_sci <- as.logical(project$primary_focus_subject == "Social Sciences" | project$secondary_focus_subject == "Social Sciences")
-project$subject_special_needs <- as.logical(project$primary_focus_subject == "Special Needs" | project$secondary_focus_subject == "Special Needs")
-project$subject_team_sports <- as.logical(project$primary_focus_subject == "Team Sports" | project$secondary_focus_subject == "Team Sports")
-project$subject_visual_arts <- as.logical(project$primary_focus_subject == "Visual Arts" | project$secondary_focus_subject == "Visual Arts")
+project$subject_applied_sci <- as.integer(as.logical(project$primary_focus_subject == "Applied Sciences" | project$secondary_focus_subject == "Applied Sciences"))
+project$subject_character_ed <- as.integer(as.logical(project$primary_focus_subject == "Character Education" | project$secondary_focus_subject == "Character Education"))
+project$subject_civics_gov <- as.integer(as.logical(project$primary_focus_subject == "Civics & Government" | project$secondary_focus_subject == "Civics & Government"))
+project$subject_college_career <- as.integer(as.logical(project$primary_focus_subject == "College & Career Prep" | project$secondary_focus_subject == "College & Career Prep"))
+project$subject_community <- as.integer(as.logical(project$primary_focus_subject == "Community Service" | project$secondary_focus_subject == "Community Service"))
+project$subject_early_dev <- as.integer(as.logical(project$primary_focus_subject == "Early Development" | project$secondary_focus_subject == "Early Development"))
+project$subject_economics <- as.integer(as.logical(project$primary_focus_subject == "Economics" | project$secondary_focus_subject == "Economics"))
+project$subject_enviro_sci <- as.integer(as.logical(project$primary_focus_subject == "Environmental Science" | project$secondary_focus_subject == "Environmental Science"))
+project$subject_esl <- as.integer(as.logical(project$primary_focus_subject == "ESL" | project$secondary_focus_subject == "ESL"))
+project$subject_extracurricular <- as.integer(as.logical(project$primary_focus_subject == "Extracurricular" | project$secondary_focus_subject == "Extracurricular"))
+project$subject_financial_lit <- as.integer(as.logical(project$primary_focus_subject == "Financial Literacy" | project$secondary_focus_subject == "Financial Literacy"))
+project$subject_foreign_lang <- as.integer(as.logical(project$primary_focus_subject == "Foreign Languages" | project$secondary_focus_subject == "Foreign Languages"))
+project$subject_gym_fitness <- as.integer(as.logical(project$primary_focus_subject == "Gym & Fitness" | project$secondary_focus_subject == "Gym & Fitness"))
+project$subject_health_life_sci <- as.integer(as.logical(project$primary_focus_subject == "Health & Life Science" | project$secondary_focus_subject == "Health & Life Science"))
+project$subject_health_wellness <- as.integer(as.logical(project$primary_focus_subject == "Health & Wellness" | project$secondary_focus_subject == "Health & Wellness"))
+project$subject_hist_geog <- as.integer(as.logical(project$primary_focus_subject == "History & Geography" | project$secondary_focus_subject == "History & Geography"))
+project$subject_literacy <- as.integer(as.logical(project$primary_focus_subject == "Literacy" | project$secondary_focus_subject == "Literacy"))
+project$subject_lit_writing <- as.integer(as.logical(project$primary_focus_subject == "Literature & Writing" | project$secondary_focus_subject == "Literature & Writing"))
+project$subject_math <- as.integer(as.logical(project$primary_focus_subject == "Mathematics" | project$secondary_focus_subject == "Mathematics"))
+project$subject_music <- as.integer(as.logical(project$primary_focus_subject == "Music" | project$secondary_focus_subject == "Music"))
+project$subject_nutrition <- as.integer(as.logical(project$primary_focus_subject == "Nutrition" | project$secondary_focus_subject == "Nutrition"))
+project$subject_other <- as.integer(as.logical(project$primary_focus_subject == "Other" | project$secondary_focus_subject == "Other"))
+project$subject_parent <- as.integer(as.logical(project$primary_focus_subject == "Parent Involvement" | project$secondary_focus_subject == "Parent Involvement"))
+project$subject_perform_art <- as.integer(as.logical(project$primary_focus_subject == "Performing Arts" | project$secondary_focus_subject == "Performing Arts"))
+project$subject_social_sci <- as.integer(as.logical(project$primary_focus_subject == "Social Sciences" | project$secondary_focus_subject == "Social Sciences"))
+project$subject_special_needs <- as.integer(as.logical(project$primary_focus_subject == "Special Needs" | project$secondary_focus_subject == "Special Needs"))
+project$subject_team_sports <- as.integer(as.logical(project$primary_focus_subject == "Team Sports" | project$secondary_focus_subject == "Team Sports"))
+project$subject_visual_arts <- as.integer(as.logical(project$primary_focus_subject == "Visual Arts" | project$secondary_focus_subject == "Visual Arts"))
 
 ```
 
@@ -150,21 +165,12 @@ project$resource_type[project$resource_type == ""] <- "Other"
 project$resource_type <- droplevels(project$resource_type)
 ```
 
-#### Funding status and Date Posted
-We will only focus on projects that are either completed (successfully funded) or expired (did not reach funding goal), and remove the live and reallocated projects. To limit the scope of the analysis, we will only focus on projects posted in the last 3 years (2014 onward).
-
-``` {r Funding Status}
-project <- project %>% filter(funding_status == "completed" | funding_status == "expired")
-project$funding_status <- droplevels(project$funding_status)
-
-project <- subset(project, date_posted >= "2014-01-01")
-```
 
 
 ## Essay Data
 
 #### Importing the file
-Let's import the file and only keep records that are from 2014 onwards.
+Let's import the file and only keep records that are from 2015.
 ```{r Essay Import}
 essay_orig <- fread("opendata_essays0002/opendata_essays000.csv", encoding = "UTF-8", sep = ",", header = FALSE, data.table = FALSE, col.names = c('_projectid', '_teacher_acctid', 'title', 'essay'), drop = c(4,5,7,8))
 
@@ -181,7 +187,6 @@ The AFINN lexicon provides a positivity score for each word, from -5 (most negat
 The Bing lexicon rates words as positive or negative. We can calculate the difference between the number of positive and negative words in each essay to get a sentiment score.
 
 
-#### Importing the file
 ```{r Sentiment}
 
 AFINN <- subset(sentiments, lexicon == "AFINN", select = c(word, score))
@@ -189,7 +194,7 @@ bing <- get_sentiments("bing")
 
 sentiment_data <- data.frame()
 
-for (i in 0:44) {
+for (i in 0:19) {
   cat(i)
   firstrow <- 1 + i * 10000
   lastrow <- (i + 1) * 10000
@@ -235,7 +240,7 @@ project$bing_score[is.na(project$bing_score)] <- 0
 ```
 
 ```{r  Free up memory}
-sort( sapply(ls(),function(x){object.size(get(x))}))
+sort(sapply(ls(),function(x){object.size(get(x))}))
 remove(essay_orig)
 remove(project_orig)
 remove(sentiment_data)
@@ -250,23 +255,25 @@ remove(essay_words)
 gc()
 ```
 
-
-
-
 ## Model Building
 
-The objective of this capstone project is to build a model to predict the chance of getting funding based on certain characteristics of the project and essay. Let's focus on the more recent data from DonorsChoose.org, and use the years 2014-2015 to predict the results from 2016.
+The objective of this capstone project is to build a model to predict the chance of getting funding based on certain characteristics of the project and essay. Let's focus on the more recent data from DonorsChoose.org, and use the data from 2015. 2015 was chosen since it will provide a full year's worth of data, since we will consider month posted as one of the independent variables. 2016 data was not included since there are still open projects which may skew the results. 
 
 ```{r Training and Test Sets}
 project$completed <- as.logical(project$funding_status == "completed")
 
-train <- subset(project, date_posted >= "2014-01-01" & date_posted <= "2015-12-31")
-test <- subset(project, date_posted >= "2016-01-01")
+library(caTools)
+set.seed(1000)
+split <- sample.split(project$completed, SplitRatio = 0.7)
+
+train <- subset(project, split == TRUE)
+test <- subset(project, split == FALSE)
 ```
 
 For building the model, let's focus on properties of the project that are within the teacher's control. So Focus Subject and Total Price can be set by the teacher, but school location and grade level cannot.
 
 The independent properties will be:
+
 * resource_type
 * total_price_excluding_optional_support
 * focus_area (7 properties)
@@ -274,50 +281,41 @@ The independent properties will be:
 * wordcount
 * afinn_score
 * bing_score
+* month_posted
+
 
 ```{r CART Model}
-modelcart <- rpart(funding_status ~ resource_type + total_price_excluding_optional_support + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + wordcount + afinn_score + bing_score, data = train, method = "class", cp = 0.01)
+library(caret)
+library(e1071)
 
-prp(modelcart)
+fitControl <- trainControl(method = "cv", number = 5)
+cartGrid <- expand.grid(.cp=(1:10)*0.0001)
+
+train(funding_status ~ resource_type + total_price_excluding_optional_support + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + wordcount + afinn_score + bing_score + month_posted, data = train, method = "rpart", trControl = fitControl, tuneGrid = cartGrid)
+
+modelcart <- rpart(funding_status ~ resource_type + total_price_excluding_optional_support + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + wordcount + afinn_score + bing_score + month_posted, data = train, method = "class", cp = 0.0002)
 
 predictiontraincart <- predict(modelcart, type = "class")
 table(train$funding_status, predictiontraincart)
 
 predictiontestcart <- predict(modelcart, newdata = test, type = "class")
 table(test$funding_status, predictiontestcart)
+
+
+print(modelcart)
+
+library(rattle)
+fancyRpartPlot(modelcart, palettes = c("Greens", "Reds"))
 ```
 
-The accuracy of the model on the training set is (232048 + 29037)/360769 = 0.7242
+The accuracy of the model on the training set is (90947+9781)/134037 = 0.7515
 
-The baseline model (where all projects are predicted as "completed") has an accuracy of (232048 + 23871)/360769 = 0.7094 
+The baseline model (where all projects are predicted as "completed") has an accuracy of (90947 + 5564)/134037 = 0.7200
 
 The CART model is a modest improvement over the baseline model
 
-The accuracy of the model on the test set is (62132 + 3982)/87117 = 0.7589
-The baseline model has an accuracy of (62132 + 4814)/87117 = 0.7685
+The accuracy of the model on the test set is (38791 + 4066)/57445 = 0.7461
 
-The CART model does not perform as well as the baseline model on the test set.
+The baseline model has an accuracy of (38791 + 2571)/57445 = 0.7200
 
-
-
-```{r Logistic Regression Model}
-logmodel <- glm(completed ~ resource_type + total_price_excluding_optional_support + focus_area_applied_learning + focus_area_health_sports + focus_area_history_civics + focus_area_lit_language + focus_area_math_science + focus_area_music_arts + focus_area_special_needs + subject_applied_sci + subject_character_ed + subject_civics_gov + subject_college_career + subject_community + subject_early_dev + subject_economics + subject_enviro_sci + subject_esl + subject_extracurricular + subject_financial_lit + subject_foreign_lang + subject_gym_fitness + subject_health_life_sci + subject_health_wellness + subject_hist_geog + subject_literacy + subject_lit_writing + subject_math + subject_music + subject_nutrition + subject_other + subject_parent + subject_perform_art + subject_social_sci + subject_special_needs + subject_team_sports + subject_visual_arts + wordcount + afinn_score + bing_score, data = train, family = "binomial")
-
-summary(logmodel)
-predictiontrainlog <- predict(logmodel, type = "response")
-table(train$funding_status, predictiontrainlog < 0.5)
-
-predictiontestlog <- predict(logmodel, newdata = test, type = "response")
-table(test$funding_status, predictiontestlog < 0.5)
-```
-
-The accuracy of the model on the training set is (247480 + 12551)/360769 = 0.7208
-
-The baseline model (where all projects are predicted as "completed") has an accuracy of 0.7094 
-
-The logistic regression model is a modest improvement over the baseline model
-
-The accuracy of the model on the test set is (65361 + 1762)/87117 = 0.7705
-The baseline model has an accuracy of 0.7685
-
-The logistic regression model performs slightly better on the test set than the baseline model.
+The CART model is also a modest improvement over the baseline model for the test set.
