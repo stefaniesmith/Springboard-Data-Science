@@ -1,0 +1,394 @@
+---
+title: "Milestone Report"
+output: pdf_document
+---
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.width=10, fig.height=4)
+library(plyr)
+library(tidyr)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(grid)
+library(choroplethr)
+library(choroplethrMaps)
+library(tidytext)
+library(reshape2)
+library(wordcloud)
+library(stringr)
+```
+
+## Introduction
+
+Across the country, many public school teachers use their own money to buy supplies for their classrooms, including basic essentials like notebooks and pencils. If schools and teachers cannot afford these supplies, students may miss out on learning opportunities. DonorsChoose.org was established to help teachers get the resources they need for classroom projects. Through the DonorsChoose.org website, teachers can request materials for their classrooms. Donors can browse through requests, and select a project they would like to support financially.
+
+The goal of this capstone project is to provide guidance to teachers who are using DonorsChoose.org to fund their classroom projects.  This will include suggestions on how to select a school project that has a greater chance of receiving funding. Information will be provided on how to structure essay requests, and the preferred tone of the requests to improve the chance of getting donations.
+
+## Dataset
+
+Data for this capstone project was obtained from the DonorsChoose.org open datasets:
+
+<https://data.donorschoose.org/open-data/overview/>
+
+This includes information on donations, school projects, resources requested, school information, and written essays describing the projects.
+
+## Exploratory Data Analysis
+
+Data analysis was conducted using R. The datasets from DonorsChoose.org were cleaned, including changing data types, and reordering factor levels.
+
+For the exploratory data analysis, the factors that may affect a project's chances of getting funding (including subject area, resources requested, school location, grade level, poverty level, etc.) were analyzed. Essay requests were examined using text sentiment analysis.
+
+
+### Project Data
+
+```{r File Import, cache=TRUE, echo=FALSE}
+project_orig <- read.csv(gzfile("opendata_projects000.gz"), sep = ",", header = FALSE, col.names = c('_projectid', '_teacher_acctid', '_schoolid', 'school_ncesid', 'school_latitude', 'school_longitude', 'school_city', 'school_state', 'school_zip', 'school_metro', 'school_district', 'school_county', 'school_charter', 'school_magnet', 'school_year_round', 'school_nlns', 'school_kipp', 'school_charter_ready_promise', 'teacher_prefix', 'teacher_teach_for_america', 'teacher_ny_teaching_fellow', 'primary_focus_subject', 'primary_focus_area' ,'secondary_focus_subject', 'secondary_focus_area', 'resource_type', 'poverty_level', 'grade_level', 'vendor_shipping_charges', 'sales_tax', 'payment_processing_charges', 'fulfillment_labor_materials', 'total_price_excluding_optional_support', 'total_price_including_optional_support', 'students_reached', 'total_donations', 'num_donors', 'eligible_double_your_impact_match', 'eligible_almost_home_match', 'funding_status', 'date_posted', 'date_completed', 'date_thank_you_packet_mailed', 'date_expiration'))
+```
+
+```{r Clean Data, echo=FALSE}
+project <- tbl_df(project_orig)
+project$X_projectid <- as.character(project$X_projectid)
+project$X_teacher_acctid <- as.character(project$X_teacher_acctid)
+project$X_schoolid <- as.character(project$X_schoolid)
+project$school_ncesid <- as.character(project$school_ncesid)
+
+project$school_zip <- as.factor(project$school_zip)
+
+project$school_charter <- as.logical(toupper(as.character(project$school_charter)))
+project$school_magnet <- as.logical(toupper(as.character(project$school_magnet)))
+project$school_year_round <- as.logical(toupper(as.character(project$school_year_round)))
+project$school_nlns <- as.logical(toupper(as.character(project$school_nlns)))
+project$school_kipp <- as.logical(toupper(as.character(project$school_kipp)))
+project$school_charter_ready_promise <- as.logical(toupper(as.character(project$school_charter_ready_promise)))
+project$teacher_teach_for_america <- as.logical(toupper(as.character(project$teacher_teach_for_america)))
+project$teacher_ny_teaching_fellow <- as.logical(toupper(as.character(project$teacher_ny_teaching_fellow)))
+project$eligible_double_your_impact_match <- as.logical(toupper(as.character(project$eligible_double_your_impact_match)))
+project$eligible_almost_home_match <- as.logical(toupper(as.character(project$eligible_almost_home_match)))
+
+project$date_posted <- as.Date(project$date_posted)
+project$date_completed <- as.Date(project$date_completed)
+project$date_thank_you_packet_mailed <- as.Date(project$date_thank_you_packet_mailed)
+project$date_expiration <- as.Date(project$date_expiration)
+
+project$grade_level <- factor(project$grade_level, levels = c("", "Grades PreK-2", "Grades 3-5", "Grades 6-8", "Grades 9-12"))
+project$poverty_level <- factor(project$poverty_level, levels = c("", "low poverty", "moderate poverty", "high poverty", "highest poverty"))
+
+```
+
+
+#### Funding status
+In the data set, there are four different options for funding status, including completed, expired, reallocated and live. Since the goal of this capstone project is to predict whether or not a project will be successfully funded (completed or expired), any live or reallocated projects will be excluded from the analysis.
+
+``` {r Funding Status, echo=FALSE}
+ggplot(project, aes(x = funding_status)) + geom_bar() + coord_flip() + theme_few()
+project <- project %>% filter(funding_status == "completed" | funding_status == "expired")
+```
+
+#### Type of School
+
+There are several properties which indicate the type of school, including:
+
+* school_charter
+* school_magnet
+* school_year_round
+* school_nlns (New Leaders for New Schools program)
+* school_kipp
+* school_charter_ready_promise
+
+The relationship between each of these properties and funding status was examined.
+``` {r Draw Plots, echo=FALSE}
+Palette1 <- c("#7AC36A", "#F15A60")
+draw_graphs <- function(df,prop1,prop2,name1,name2) {
+  plot1 <- ggplot(df, aes(x = prop1)) + geom_bar() + coord_flip() + theme_few() + scale_y_continuous(name = "Total Count") + scale_x_discrete(name = name1)
+
+  plot2 <- ggplot(df, aes(x = prop1, fill = prop2)) + geom_bar(position = "fill") + coord_flip() + theme_few() + theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + scale_fill_manual(name = name2, values=Palette1) + scale_y_continuous(name = "Relative Count")
+
+  grid.draw(cbind(ggplotGrob(plot1), ggplotGrob(plot2), size = "last"))
+}
+```
+
+``` {r Charter School, echo=FALSE}
+draw_graphs(project, project$school_charter, project$funding_status, "Charter School", "Funding Status")
+```
+
+``` {r Magnet School, echo=FALSE}
+draw_graphs(project, project$school_magnet, project$funding_status, "Magnet School", "Funding Status")
+```
+
+``` {r NLNS School, echo=FALSE}
+draw_graphs(project, project$school_nlns, project$funding_status, "NLNS School", "Funding Status")
+```
+
+``` {r KIPP School, echo=FALSE}
+draw_graphs(project, project$school_kipp, project$funding_status, "KIPP School", "Funding Status")
+```
+
+``` {r Charter Ready Promise School, echo=FALSE}
+draw_graphs(project, project$school_charter_ready_promise, project$funding_status, "Charter Ready Promise School", "Funding Status")
+```
+
+#### Teacher Attributes
+
+The attributes of the teacher include:
+
+* teacher_prefix
+* teacher_teach_for_america
+* teacher_ny_teaching_fellow
+
+``` {r Teacher Prefix, echo=FALSE}
+draw_graphs(project, project$teacher_prefix, project$funding_status, "Teacher Prefix", "Funding Status")
+```
+
+``` {r Teach for America, echo=FALSE}
+draw_graphs(project, project$teacher_teach_for_america, project$funding_status, "Teach for America", "Funding Status")
+```
+
+``` {r NY Teaching Fellow, echo=FALSE}
+draw_graphs(project, project$teacher_ny_teaching_fellow, project$funding_status, "NY Teaching Fellow", "Funding Status")
+```
+
+
+#### Project Categories
+
+The project categories include:
+
+* primary_focus_subject
+* primary_focus_area
+* secondary_focus_subject
+* secondary_focus_area
+* resource_type
+* poverty_level
+* grade_level
+
+``` {r Primary Focus Area, echo=FALSE}
+draw_graphs(project, project$primary_focus_area, project$funding_status, "Primary Focus Area", "Funding Status")
+```
+
+``` {r Primary Focus Subject, echo=FALSE}
+draw_graphs(project, project$primary_focus_subject, project$funding_status, "Primary Focus Subject", "Funding Status")
+```
+
+``` {r Secondary Focus Area, echo=FALSE}
+draw_graphs(project, project$secondary_focus_area, project$funding_status, "Secondary Focus Area", "Funding Status")
+```
+
+``` {r Secondary Focus Subject, echo=FALSE}
+draw_graphs(project, project$secondary_focus_subject, project$funding_status, "Secondary Focus Subject", "Funding Status")
+```
+
+``` {r Resource Type, echo=FALSE}
+draw_graphs(project, project$resource_type, project$funding_status, "Resource Type", "Funding Status")
+```
+
+``` {r Poverty Level, echo=FALSE}
+draw_graphs(project, project$poverty_level, project$funding_status, "Poverty Level", "Funding Status")
+```
+
+``` {r Grade Level, echo=FALSE}
+draw_graphs(project, project$grade_level, project$funding_status, "Grade Level", "Funding Status")
+```
+
+
+#### Project Pricing and Impact
+
+These fields are available under Project Details on a project page, breaking down the cost of a project into its parts.
+
+* vendor_shipping_charges
+* sales_tax
+* payment_processing_charges
+* fulfillment_labor_materials
+* total_price_excluding_opt_donation
+* total_price_including_opt_donation
+* students_reached
+
+Some of these properties were examined in more detail:
+
+``` {r Plot Histograms, echo=FALSE}
+draw_histograms <- function(df,prop1,prop2,name1,name2) {
+  plot1 <- ggplot(df, aes(x = prop1)) + geom_histogram(binwidth = 1) + coord_flip() + theme_few() + scale_y_continuous(name = "Total Count") + scale_x_continuous(name = name1)
+
+  plot2 <- ggplot(df, aes(x = prop1, fill = prop2)) + geom_histogram(binwidth = 1, position = "fill") + coord_flip() + theme_few() + theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + scale_fill_manual(name = name2, values=Palette1) + scale_y_continuous(name = "Relative Count")
+
+  grid.draw(cbind(ggplotGrob(plot1), ggplotGrob(plot2), size = "last"))
+}
+```
+
+``` {r Total Price Excluding Optional Support, echo=FALSE}
+draw_histograms(project, log10(project$total_price_excluding_optional_support), project$funding_status, "Log(Total Price Excluding Optional Support)", "Funding Status")
+```
+
+``` {r Total Price Including Optional Support, echo=FALSE}
+draw_histograms(project, log10(project$total_price_including_optional_support), project$funding_status, "Log(Total Price Including Optional Support)", "Funding Status")
+```
+
+``` {r Students Reached, echo=FALSE}
+draw_histograms(project, log10(project$students_reached), project$funding_status, "Log(Students Reached)", "Funding Status")
+
+```
+
+#### Project Donations
+
+These fields provide information about the donations made to a particular project.
+
+* total_donations: Total donation amount
+* num_donors: Number of unique donors giving to this project
+* eligible_double_your_impact_match: True if the project was ever eligible for a Double Your Impact match offer
+* eligible_almost_home_match: True if the project was ever eligible for an Almost Home match offer
+
+``` {r Total Donations, echo=FALSE}
+draw_histograms(project, log10(project$total_donations), project$funding_status, "Log(Total Donations)", "Funding Status")
+```
+
+``` {r Number of Donors, echo=FALSE}
+draw_histograms(project, log10(project$num_donors), project$funding_status, "Log(Number of Donors)", "Funding Status")
+```
+
+``` {r Eligible for Double Your Match, echo=FALSE}
+draw_graphs(project, project$eligible_double_your_impact_match, project$funding_status, "Eligible for Double Your Impact Match", "Funding Status")
+```
+
+``` {r Eligible for Almost Home Match, echo=FALSE}
+draw_graphs(project, project$eligible_almost_home_match, project$funding_status, "Eligible for Almost Home Match", "Funding Status")
+```
+
+#### Project Status
+
+These fields provide status information and dates for when a project reached their milestones.
+
+* funding_status: Completed, Expired, Live, or Reallocated
+* date_posted: Date a project was approved by staff to be listed on the site
+* date_completed: Date a project become fully funded
+* date_thank_you_packet_mailed: Date that the project went through the final stage of sending out a thank you package to donors
+* date_expiration: Date the project was set to expire and be delisted from the site
+
+``` {r Year Posted, echo=FALSE}
+draw_graphs(project, as.factor(format(project$date_posted, '%Y')), project$funding_status, "Year Posted", "Funding Status")
+```
+
+#### School Location
+
+The fields describing school location include:
+
+* school_latitude
+* school_longitude
+* school_city
+* school_state
+* school_zip: 5 Digit Zip
+* school_metro: Urban, Suburban, or Rural
+* school_district
+* school_county
+
+``` {r School Metro, echo=FALSE}
+draw_graphs(project, project$school_metro, project$funding_status, "School Metro", "Funding Status")
+```
+
+``` {r State Map, echo=FALSE}
+project <- project %>% mutate(project_completed = as.integer(funding_status == "completed"))
+
+state_summary <- project %>% group_by(school_state) %>% summarise(value = mean(project_completed) * 100) %>% rename(abb = school_state)
+
+data(state.regions)
+state_summary <- left_join(state_summary, state.regions, by="abb")
+
+state_choropleth(state_summary, num_colors = 5, legend = "Percent Completed")
+```
+
+``` {r County Map, echo=FALSE}
+county_summary <- project %>% rename(state.abb = school_state, county.name = school_county) %>% mutate(county.name = tolower(county.name)) %>% group_by(county.name, state.abb) %>% summarise(value = mean(project_completed) * 100) 
+
+data("county.regions")
+county_summary <- left_join(county.regions, county_summary, by=c("state.abb","county.name"))
+
+county_choropleth(county_summary, num_colors = 5, legend = "Percent Completed")
+
+```
+
+
+## Essay Data
+
+The project essay data includes the full text of the teacher-written requests accompanying all classroom projects. Since the dataset is quite large, the exploratory data analysis was limited to the first 10000 essays.
+
+```{r Essay Import, cache=TRUE, echo=FALSE}
+essay_orig <- fread("opendata_essays0002/opendata_essays000.csv", encoding = "UTF-8", sep = ",", header = FALSE, data.table = FALSE, nrows = 10000, col.names = c('_projectid', '_teacher_acctid', 'title', 'short_description', 'need_statement', 'essay', 'thankyou_note', 'impact_letter'))
+```
+
+#### Sentiment Analysis using AFINN Lexicon
+Sentiment analysis was performed on each essay using the AFINN lexicon, which provides a positivity score for each word, from -5 (most negative) to 5 (most positive). The positivity scores for each word in the essay were then averaged.
+
+```{r AFINN Sentiment, echo=FALSE}
+essay_words <- essay_orig %>%
+  select(`_projectid`, `_teacher_acctid`, essay) %>%
+  unnest_tokens(word, essay) %>%
+  filter(!word %in% stop_words$word,
+         str_detect(word, "^[a-z']+$"))
+
+AFINN <- subset(sentiments, lexicon == "AFINN", select = c(word, score))
+
+afinn_sentiment <- essay_words %>%
+  inner_join(AFINN, by = "word") %>%
+  group_by(`_projectid`, `_teacher_acctid`) %>%
+  summarize(afinn_score = mean(score))
+
+ggplot(afinn_sentiment, aes(x=afinn_score)) + geom_histogram() + theme_few()
+```
+
+#### Sentiment Analysis using Bing Lexicon
+Sentiment analysis was also conducted using the Bing lexicon, which rates words as positive or negative. The difference between the number of positive and negative words in each essay was then calculated.
+
+```{r Bing Sentiment, echo=FALSE}
+bing <- get_sentiments("bing")
+
+essay_word_count <- essay_orig %>% 
+  select(`_projectid`, `_teacher_acctid`, essay) %>% 
+  unnest_tokens(word, essay) %>% 
+  count(`_projectid`, `_teacher_acctid`) %>% 
+  rename(wordcount = n)
+
+bing_sentiment <- essay_words %>%
+  inner_join(bing) %>%
+  count(`_projectid`, `_teacher_acctid`, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  left_join(essay_word_count, by = c("_projectid", "_teacher_acctid")) %>% 
+  mutate(bing_score = 100*(positive - negative)/wordcount)
+
+ggplot(bing_sentiment, aes(x=bing_score)) + geom_histogram() + theme_few()
+```
+
+
+#### Most common positive and negative words
+
+The bing lexicon was used to figure out the most commonly used positive and negative terms.
+```{r Positive Negative Words, echo=FALSE}
+bing_word_counts <- essay_words %>%
+  inner_join(bing) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_word_counts %>%
+  filter(n > 1000) %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_bar(stat = "identity") + theme_few() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ylab("Contribution to sentiment")
+```
+
+```{r Word Cloud, echo=FALSE}
+essay_words %>%
+  inner_join(bing) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 100)
+```
+
+## Next Steps
+
+The next steps for this project include:
+
+* Project and essay data will be joined into a single data frame using the projectid as the common variable between the two data sets.
+* Due to the extensive size of the data sets (over 1 million projects and essays) and limited computational resources (not enough RAM), the data analysis will likely need to be limited to a smaller date range.
+* A model will be developed to predict the likelihood of funding based on these factors.
